@@ -29,7 +29,8 @@ module NetHttp2
         ':path'   => full_path,
       })
 
-      @headers.merge!(':authority' => "#{@uri.host}:#{@uri.port}") unless @headers[':authority']
+      # Temporary until a better solution is put in place
+      # @headers.merge!(':authority' => "#{@uri.host}:#{@uri.port}") unless @headers[':authority']
 
       if @body
         @headers.merge!('content-length' => @body.bytesize)
