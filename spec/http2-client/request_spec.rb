@@ -148,7 +148,7 @@ describe NetHttp2::Request do
   end
 
   describe "Subscription & emission" do
-    subject { NetHttp2::Client.new("http://localhost") }
+    subject { request }
     it_behaves_like "a class that implements events subscription & emission"
   end
 end

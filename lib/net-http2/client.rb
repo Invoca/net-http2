@@ -32,13 +32,17 @@ module NetHttp2
     def call(method, path, options={})
       request = prepare_request(method, path, options)
       ensure_open
-      new_stream.call_with request
+      new_stream(request: request).call
     end
 
     def call_async(request)
+      stream = prepare_streaming(request)
+      stream.call
+    end
+
+    def prepare_streaming(request)
       ensure_open
-      stream = new_monitored_stream_for request
-      stream.async_call_with request
+      new_monitored_stream_for(request)
     end
 
     def prepare_request(method, path, options={})
@@ -82,15 +86,15 @@ module NetHttp2
       end
     end
 
-    def new_stream
-      NetHttp2::Stream.new(h2_stream: h2.new_stream)
+    def new_stream(request:, async: false)
+      NetHttp2::Stream.new(h2_stream: h2.new_stream, request: request, async: async)
     rescue StandardError => e
       close
       raise e
     end
 
     def new_monitored_stream_for(request)
-      stream = new_stream
+      stream = new_stream(request: request, async: true)
 
       @streams[stream.id] = true
       request.on(:close) { @streams.delete(stream.id) }

@@ -4,10 +4,10 @@ module NetHttp2
 
     def initialize(options={})
       @h2_stream = options[:h2_stream]
+      @request   = options[:request]
+      @async     = options[:async] || false
       @headers   = {}
       @data      = ''
-      @request   = nil
-      @async     = false
       @completed = false
       @mutex     = Mutex.new
       @cv        = ConditionVariable.new
@@ -21,17 +21,23 @@ module NetHttp2
       @h2_stream.id
     end
 
-    def call_with(request)
-      @request = request
-      send_request_data
-      sync_respond
+    def call(body: nil, end_stream: true)
+      data = body || @request.body
+
+      if data
+        send_headers(@request.headers, end_stream: false)
+        send_data(data, end_stream: end_stream)
+      else
+        send_headers(@request.headers, end_stream: end_stream)
+      end
+
+      unless async?
+        sync_respond
+      end
     end
 
-    def async_call_with(request)
-      @request = request
-      @async   = true
-
-      send_request_data
+    def done
+      send_data("", end_stream: true)
     end
 
     def completed?
@@ -78,22 +84,21 @@ module NetHttp2
       end
     end
 
-    def send_request_data
-      headers = @request.headers
-      body    = @request.body
-
-      if body
-        @h2_stream.headers(headers, end_stream: false)
-        @h2_stream.data(body, end_stream: true)
-      else
-        @h2_stream.headers(headers, end_stream: true)
+    def send_headers(headers, end_stream: false)
+      unless @headers_sent
+        @h2_stream.headers(headers, end_stream: end_stream)
+        @headers_sent = true
       end
+    end
+
+    def send_data(data, end_stream: false)
+      @h2_stream.data(data, end_stream: end_stream)
     end
 
     def sync_respond
       wait_for_completed
 
-      NetHttp2::Response.new(headers: @headers, body: @data) if @completed
+      NetHttp2::Response.new(headers: @headers, body: @data) if completed?
     end
 
     def wait_for_completed
