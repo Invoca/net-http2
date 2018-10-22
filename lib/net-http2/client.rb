@@ -54,13 +54,13 @@ module NetHttp2
     end
 
     def close
-      exit_thread(@socket_thread)
+      stop_socket_loop
       init_vars
     end
 
     def join
       while !@streams.empty? do
-        sleep 0.05
+        EMP.sleep 0.05
       end
     end
 
@@ -105,25 +105,11 @@ module NetHttp2
     def ensure_open
       @mutex.synchronize do
 
-        return if @socket_thread
+        return if @socket_loop
 
         @socket = new_socket
 
-        @socket_thread = Thread.new do
-          begin
-            socket_loop
-
-          rescue EOFError
-            # socket closed
-            init_vars
-            callback_or_raise SocketError.new('Socket was remotely closed')
-
-          rescue Exception => e
-            # error on socket
-            init_vars
-            callback_or_raise e
-          end
-        end.tap { |t| t.abort_on_exception = true }
+        @socket_loop = start_socket_loop
       end
     end
 
@@ -135,21 +121,37 @@ module NetHttp2
       end
     end
 
+    def start_socket_loop
+      EMP.add_periodic_timer(0.01) do
+        begin
+          socket_loop
+
+        rescue EOFError
+          # socket closed
+          init_vars
+          callback_or_raise SocketError.new('Socket was remotely closed')
+
+        rescue Exception => e
+          # error on socket
+          init_vars
+          callback_or_raise e
+        end
+      end
+    end
+
+    def stop_socket_loop
+      if @socket_loop
+        @socket_loop.cancel
+        @socket_loop = nil
+      end
+    end
+
     def socket_loop
-
-      ensure_sent_before_receiving
-
-      loop do
-
+      if @first_data_sent
         begin
           data_received = @socket.read_nonblock(1024)
           h2 << data_received
-        rescue IO::WaitReadable
-          IO.select([@socket])
-          retry
-        rescue IO::WaitWritable
-          IO.select(nil, [@socket])
-          retry
+        rescue IO::WaitReadable, IO::WaitWritable
         end
       end
     end
@@ -164,7 +166,7 @@ module NetHttp2
 
     def ensure_sent_before_receiving
       while !@first_data_sent
-        sleep 0.01
+        EMP.sleep 0.01
       end
     end
 
